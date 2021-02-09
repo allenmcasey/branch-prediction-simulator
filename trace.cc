@@ -1,8 +1,5 @@
 // trace.cc
-// This file contains code for reading traces.  There's nothing in this
-// file you need to understand to participate in the branch prediction 
-// contest.
-
+// This file contains code for reading traces.
 // djimenez
 
 #include <stdio.h>
