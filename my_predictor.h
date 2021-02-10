@@ -61,6 +61,8 @@ public:
 
 class pm_predictor : public branch_predictor {
 public:
+#define HISTORY_LENGTH	15
+#define TABLE_BITS	15
         pm_update u;
 
         pm_predictor (void) {
