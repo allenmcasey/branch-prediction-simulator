@@ -62,6 +62,7 @@ class pm_update : public branch_update {
 public:
         unsigned int bimodalIndex;
 	unsigned int globalIndex;
+	unsigned char tag;
 };
 
 class pm_predictor : public branch_predictor {
@@ -72,7 +73,7 @@ public:
         pm_update u;
 	branch_info bi;
 	unsigned int history;
-	unsigned char bimodalTable[1<<TABLE_BITS];
+	unsigned char bimodalTable[1 << TABLE_BITS];
 
         pm_predictor (void) : history(0)  {
 
@@ -89,18 +90,18 @@ public:
 		// predict branch outcome
 		if (b.br_flags & BR_CONDITIONAL) {
 
-			// find bimodal and global indices
-			u.bimodalIndex = (b.address & ((1<<TABLE_BITS)-1));
-			u.globalIndex = 0; // TODO
+			// find bimodal and global indices/tag
+			u.bimodalIndex = (b.address & ((1 << TABLE_BITS) - 1));
+			unsigned int hash = ((((b.address >> 13) & ((1 << 6) - 1)) ^ (history & ((1 << 6) - 1))) << 9)
+					| (((b.address >> 4) & ((1 << 9) - 1)) ^ ((history >> 6) & ((1 << 9) - 1)));
+			u.globalIndex = (hash >> 6); 
+			u.tag = (hash & ((1 << 6) - 1);	
 			u.direction_prediction (tab[u.index] >> 1);
 
 		} else {
 			u.direction_prediction (true);
 		}
-			
-		// predict branch target address
-            	u.target_prediction (0);
-            
+            	u.target_prediction (0);       
 		return &u;
         }
 
@@ -119,7 +120,7 @@ public:
 			// update GBH
 			history <<= 1;				// shift table left 1
 			history |= taken;			// add 1 or 0 to history (T/NT)
-			history &= (1<<HISTORY_LENGTH)-1;	// mask for only 15 bits (chops off MSB)
+			history &= (1 << HISTORY_LENGTH) - 1;	// mask for only 15 bits (chops off MSB)
 		}		
         }
 };
