@@ -60,7 +60,8 @@ public:
 // predictor that combines a bimodal predictor and a global predictor. 
 class pm_update : public branch_update {
 public:
-        unsigned int index;
+        unsigned int bimodalIndex;
+	unsigned int globalIndex;
 };
 
 class pm_predictor : public branch_predictor {
@@ -68,7 +69,8 @@ public:
 #define HISTORY_LENGTH	15
 #define TABLE_BITS	12
 
-	pm_update u;
+        pm_update u;
+	branch_info bi;
 	unsigned int history;
 	unsigned char bimodalTable[1<<TABLE_BITS];
 
@@ -81,9 +83,20 @@ public:
         }
 
         branch_update *predict (branch_info & b) {
-			
+
+		bi = b;
+
 		// predict branch outcome
-            	u.direction_prediction (true);
+		if (b.br_flags & BR_CONDITIONAL) {
+
+			// find bimodal and global indices
+			u.bimodalIndex = (b.address & ((1<<TABLE_BITS)-1));
+			u.globalIndex = 0; // TODO
+			u.direction_prediction (tab[u.index] >> 1);
+
+		} else {
+			u.direction_prediction (true);
+		}
 			
 		// predict branch target address
             	u.target_prediction (0);
