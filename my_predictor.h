@@ -62,18 +62,19 @@ class pm_update : public branch_update {
 public:
         unsigned int bimodalIndex;
 	unsigned int globalIndex;
-	unsigned char tag;
+	unsigned char globalTag;
 };
 
 class pm_predictor : public branch_predictor {
 public:
 #define HISTORY_LENGTH	15
-#define TABLE_BITS	12
+#define BM_TABLE_BITS	12
 
         pm_update u;
 	branch_info bi;
 	unsigned int history;
-	unsigned char bimodalTable[1 << TABLE_BITS];
+	unsigned char bimodalTable[1 << BM_TABLE_BITS];
+	// TODO: implement global predictor
 
         pm_predictor (void) : history(0)  {
 
@@ -91,12 +92,15 @@ public:
 		if (b.br_flags & BR_CONDITIONAL) {
 
 			// find bimodal and global indices/tag
-			u.bimodalIndex = (b.address & ((1 << TABLE_BITS) - 1));
+			u.bimodalIndex = (b.address & ((1 << BM_TABLE_BITS) - 1));
 			unsigned int hash = ((((b.address >> 13) & ((1 << 6) - 1)) ^ (history & ((1 << 6) - 1))) << 9)
-					| (((b.address >> 4) & ((1 << 9) - 1)) ^ ((history >> 6) & ((1 << 9) - 1)));
+					  | (((b.address >> 4) & ((1 << 9) - 1)) ^ ((history >> 6) & ((1 << 9) - 1)));
 			u.globalIndex = (hash >> 6); 
-			u.tag = (hash & ((1 << 6) - 1);	
-			u.direction_prediction (tab[u.index] >> 1);
+			u.globalTag = (hash & ((1 << 6) - 1);	
+			u.direction_prediction (bimodalTable[u.index] >> 1);
+
+			// TODO: check global predictor for hit
+			// TODO: if no global hit, access bimodal table for prediction
 
 		} else {
 			u.direction_prediction (true);
@@ -116,6 +120,8 @@ public:
 			} else {
 				if (*c > 0) (*c)--;
 			}
+
+			// TODO: update global predictor table(s)
 
 			// update GBH
 			history <<= 1;				// shift table left 1
