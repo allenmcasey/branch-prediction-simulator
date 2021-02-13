@@ -36,12 +36,16 @@ public:
 
 	void update (branch_update *u, bool taken, unsigned int target) {
 		if (bi.br_flags & BR_CONDITIONAL) {
+			
+			// update 2-bit counter FSM if needed
 			unsigned char *c = &tab[((gshare_update*)u)->index];
 			if (taken) {
 				if (*c < 3) (*c)++;
 			} else {
 				if (*c > 0) (*c)--;
 			}
+			
+			// update history
 			history <<= 1;
 			history |= taken;
 			history &= (1<<HISTORY_LENGTH)-1;
