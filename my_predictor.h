@@ -96,7 +96,7 @@ public:
 		if (bi.br_flags & BR_CONDITIONAL) {
 
 			// update bimodal predictor if needed
-			unsigned char *c = &tab[((pm_update*)u)->index];
+			unsigned char *c = &bimodalTable[((pm_update*)u)->index];
 			if (taken) {
 				if (*c < 3) (*c)++;
 			} else {
