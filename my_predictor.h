@@ -46,9 +46,9 @@ public:
 			}
 			
 			// update history
-			history <<= 1;
-			history |= taken;
-			history &= (1<<HISTORY_LENGTH)-1;
+			history <<= 1;				// shift table left 1
+			history |= taken;			// add 1 or 0 to history (T/NT)
+			history &= (1<<HISTORY_LENGTH)-1;	// mask for only 15 bits (chops off MSB)
 		}
 	}
 };
