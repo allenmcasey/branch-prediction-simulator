@@ -66,14 +66,20 @@ public:
 class pm_predictor : public branch_predictor {
 public:
 #define HISTORY_LENGTH	15
-#define TABLE_BITS	15
-        pm_update u;
+#define TABLE_BITS	12
 
-	// TODO
-        pm_predictor (void) {
+	pm_update u;
+	unsigned int history;
+	unsigned char bimodalTable[1<<TABLE_BITS];
+
+        pm_predictor (void) : history(0)  {
+
+		// fill bimodal table with zeros
+		memset (bimodalTable, 0, sizeof (bimodalTable));
+
+		// TODO: potentially fill global predictor cache as well
         }
 
-	// TODO
         branch_update *predict (branch_info & b) {
 			
 		// predict branch outcome
@@ -85,13 +91,25 @@ public:
 		return &u;
         }
 
-	// TODO
         void update (branch_update *u, bool taken, unsigned int target) {
-			
+
+		if (bi.br_flags & BR_CONDITIONAL) {
+
+			// update bimodal predictor if needed
+			unsigned char *c = &tab[((pm_update*)u)->index];
+			if (taken) {
+				if (*c < 3) (*c)++;
+			} else {
+				if (*c > 0) (*c)--;
+			}
+
+			// update GBH
+			history <<= 1;				// shift table left 1
+			history |= taken;			// add 1 or 0 to history (T/NT)
+			history &= (1<<HISTORY_LENGTH)-1;	// mask for only 15 bits (chops off MSB)
+		}		
         }
-
 };
-
 //
 // Complete Pentium M branch predictors for extra credit
 // This class implements the complete Pentium M branch prediction units. 
