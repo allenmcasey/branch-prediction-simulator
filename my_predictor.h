@@ -23,9 +23,9 @@ public:
 	branch_update *predict (branch_info & b) {
 		bi = b;
 		if (b.br_flags & BR_CONDITIONAL) {
-			u.index = 
-				  (history << (TABLE_BITS - HISTORY_LENGTH)) 
-				^ (b.address & ((1<<TABLE_BITS)-1));
+			
+			// (history) XOR (PC address)
+			u.index = (history << (TABLE_BITS - HISTORY_LENGTH)) ^ (b.address & ((1<<TABLE_BITS)-1));
 			u.direction_prediction (tab[u.index] >> 1);
 		} else {
 			u.direction_prediction (true);
@@ -65,20 +65,23 @@ public:
 #define TABLE_BITS	15
         pm_update u;
 
+	// TODO
         pm_predictor (void) {
         }
 
+	// TODO
         branch_update *predict (branch_info & b) {
 			
-			// predict branch outcome
-            u.direction_prediction (true);
+		// predict branch outcome
+            	u.direction_prediction (true);
 			
-			// predict branch target address
-            u.target_prediction (0);
+		// predict branch target address
+            	u.target_prediction (0);
             
-			return &u;
+		return &u;
         }
 
+	// TODO
         void update (branch_update *u, bool taken, unsigned int target) {
 			
         }
