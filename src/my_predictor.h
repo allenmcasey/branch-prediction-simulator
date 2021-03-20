@@ -4,136 +4,194 @@
 
 class gshare_update : public branch_update {
 public:
-	unsigned int index;
+    unsigned int index;
 };
 
 class gshare_predictor : public branch_predictor {
 public:
-#define HISTORY_LENGTH	15
-#define TABLE_BITS	15
-	gshare_update u;
-	branch_info bi;
-	unsigned int history;
-	unsigned char tab[1<<TABLE_BITS];
 
-	gshare_predictor (void) : history(0) { 
-		memset (tab, 0, sizeof (tab));
-	}
+#define HISTORY_LENGTH    15
+#define TABLE_BITS    15
 
-	branch_update *predict (branch_info & b) {
-		bi = b;
-		if (b.br_flags & BR_CONDITIONAL) {
-			
-			// (history) XOR (PC address)
-			u.index = (history << (TABLE_BITS - HISTORY_LENGTH)) ^ (b.address & ((1<<TABLE_BITS)-1));
-			u.direction_prediction (tab[u.index] >> 1);
-		} else {
-			u.direction_prediction (true);
-		}
-		u.target_prediction (0);
-		return &u;
-	}
+    gshare_update u;
+    branch_info bi;
+    unsigned int history;
+    unsigned char tab[1<<TABLE_BITS];
 
-	void update (branch_update *u, bool taken, unsigned int target) {
-		if (bi.br_flags & BR_CONDITIONAL) {
-			
-			// update 2-bit counter FSM if needed
-			unsigned char *c = &tab[((gshare_update*)u)->index];
-			if (taken) {
-				if (*c < 3) (*c)++;
-			} else {
-				if (*c > 0) (*c)--;
-			}
-			
-			// update history
-			history <<= 1;				// shift table left 1
-			history |= taken;			// add 1 or 0 to history (T/NT)
-			history &= (1<<HISTORY_LENGTH)-1;	// mask for only 15 bits (chops off MSB)
-		}
-	}
+    gshare_predictor (void) : history(0) {
+        memset (tab, 0, sizeof(tab));
+    }
+
+    branch_update *predict (branch_info & b) {
+        bi = b;
+        if (b.br_flags & BR_CONDITIONAL) {
+
+            // (history) XOR (PC address)
+            u.index = (history << (TABLE_BITS - HISTORY_LENGTH)) ^ (b.address & ((1<<TABLE_BITS)-1));
+            u.direction_prediction (tab[u.index] >> 1);
+        } else {
+            u.direction_prediction (true);
+        }
+        u.target_prediction (0);
+        return &u;
+    }
+
+    void update (branch_update *u, bool taken, unsigned int target) {
+        if (bi.br_flags & BR_CONDITIONAL) {
+
+            // update 2-bit counter FSM if needed
+            unsigned char *c = &tab[((gshare_update*)u)->index];
+            if (taken) {
+                if (*c < 3) (*c)++;
+            } else {
+                if (*c > 0) (*c)--;
+            }
+            
+            // update history
+            history <<= 1;                        // shift table left 1
+            history |= taken;                    // add 1 or 0 to history (T/NT)
+            history &= (1<<HISTORY_LENGTH)-1;    // mask for only 15 bits (chops off MSB)
+        }
+    }
 };
 
-//
+
 // Pentium M hybrid branch predictors
-// This class implements a simple hybrid branch predictor based on the Pentium M branch outcome prediction units. 
-// Instead of implementing the complete Pentium M branch outcome predictors, the class below implements a hybrid 
-// predictor that combines a bimodal predictor and a global predictor. 
+// This class implements a simple hybrid branch predictor based on the Pentium M branch outcome prediction units.
+// Instead of implementing the complete Pentium M branch outcome predictors, the class below implements a hybrid
+// predictor that combines a bimodal predictor and a global predictor.
 class pm_update : public branch_update {
 public:
-        unsigned int bimodalIndex;
-	unsigned int globalIndex;
-	unsigned char globalTag;
+    unsigned int bimodalIndex;
+    unsigned int globalIndex;
+    unsigned char globalTag;
+    unsigned char globalLRUTable;
+    bool globalHit = false;
 };
+
 
 class pm_predictor : public branch_predictor {
 public:
-#define HISTORY_LENGTH	15
-#define BM_TABLE_BITS	12
+#define HISTORY_LENGTH         15
+#define BM_TABLE_BITS          12
 
-        pm_update u;
-	branch_info bi;
-	unsigned int history;
-	unsigned char bimodalTable[1 << BM_TABLE_BITS];
-	// TODO: implement global predictor
+    pm_update u;
+    branch_info bi;
+    unsigned int history;
+    unsigned char bimodalTable[1 << BM_TABLE_BITS];
+    unsigned int globalPredictor[512][4];
 
-        pm_predictor (void) : history(0)  {
+    pm_predictor(void) : history(0)  {
 
-		// fill bimodal table with zeros
-		memset (bimodalTable, 0, sizeof (bimodalTable));
+        // fill bimodal table and global predictor with values
+        memset(bimodalTable, 0, sizeof (bimodalTable));
 
-		// TODO: potentially fill global predictor cache as well
+        for (int i = 0; i < 512; i++) {
+            for (int j = 0; j < 4; j++) {
+                globalPredictor[i][j] = 15 - j;
+            }
+        }
+    }
+
+    branch_update* predict(branch_info & b) {
+
+        bi = b;
+        
+        if (b.br_flags & BR_CONDITIONAL) {
+
+            // find bimodal and global indices/tag
+            unsigned int hash = ((((b.address >> 13) & ((1 << 6) - 1)) ^ (history & ((1 << 6) - 1))) << 9)
+                                | (((b.address >> 4) & ((1 << 9) - 1)) ^ ((history >> 6) & ((1 << 9) - 1)));
+            u.globalIndex = (hash >> 6);
+            u.globalTag = (hash & ((1 << 6) - 1));
+
+            // loop through 4 tables
+            for (int i = 0; i < 4; i++) {
+
+                // if tag matches, use 2bC for prediction
+                if (u.globalTag == (globalPredictor[u.globalIndex][i] >> 4)) {
+                    u.globalHit = true;
+                    u.globalLRUTable = i;
+                    u.direction_prediction((globalPredictor[u.globalIndex][i] >> 3) & 1);
+                    u.target_prediction(0);
+                    return &u;
+                }
+                else if ((globalPredictor[u.globalIndex][i] & ((1 << 2) - 1)) == 3) {
+                    u.globalLRUTable = i;
+                }
+            }
+
+            // no global predictor hit, so use bimodal for prediction
+            u.bimodalIndex = (b.address & ((1 << BM_TABLE_BITS) - 1));
+            u.direction_prediction(bimodalTable[u.bimodalIndex] >> 1);
+        }
+        else {
+            u.direction_prediction(true);
         }
 
-        branch_update *predict (branch_info & b) {
+        u.target_prediction(0);
+        return &u;
+    }
 
-		bi = b;
+    void update(branch_update *u, bool taken, unsigned int target) {
 
-		// predict branch outcome
-		if (b.br_flags & BR_CONDITIONAL) {
+        if (bi.br_flags & BR_CONDITIONAL) {
 
-			// find bimodal and global indices/tag
-			u.bimodalIndex = (b.address & ((1 << BM_TABLE_BITS) - 1));
-			unsigned int hash = ((((b.address >> 13) & ((1 << 6) - 1)) ^ (history & ((1 << 6) - 1))) << 9)
-					  | (((b.address >> 4) & ((1 << 9) - 1)) ^ ((history >> 6) & ((1 << 9) - 1)));
-			u.globalIndex = (hash >> 6); 
-			u.globalTag = (hash & ((1 << 6) - 1);	
-			u.direction_prediction (bimodalTable[u.index] >> 1);
+            // update bimodal predictor if needed
+            unsigned char *c = &bimodalTable[((pm_update*)u)->bimodalIndex];
+            if (taken) {
+                if (*c < 3) (*c)++;
+            }
+            else {
+                if (*c > 0) (*c)--;
+            }
 
-			// TODO: check global predictor for hit
-			// TODO: if no global hit, access bimodal table for prediction
+            // tag insertion if no hit
+            if (!((pm_update*)u)->globalHit) {
+                int bit_mask = (63 << 4);
+                globalPredictor[((pm_update*)u)->globalIndex][((pm_update*)u)->globalLRUTable]
+                = ((globalPredictor[((pm_update*)u)->globalIndex][((pm_update*)u)->globalLRUTable] & (~bit_mask)) | (((pm_update*)u)->globalTag << 4));
+            }
 
-		} else {
-			u.direction_prediction (true);
-		}
-            	u.target_prediction (0);       
-		return &u;
+            // update LRU values
+            for (int i = 0; i < 4; i++) {
+                if (i == ((pm_update*)u)->globalLRUTable)
+                    globalPredictor[((pm_update*)u)->globalIndex][i] = ((globalPredictor[((pm_update*)u)->globalIndex][i] >> 2) << 2);
+                else {
+                    int thisLRU = (globalPredictor[((pm_update*)u)->globalIndex][i] & ((1 << 2) - 1));
+                    if (thisLRU < 3)
+                        globalPredictor[((pm_update*)u)->globalIndex][i] += 1;
+                }
+            }
+
+            // get current 2bC value
+            int counterValue = ((globalPredictor[((pm_update*)u)->globalIndex][((pm_update*)u)->globalLRUTable] >> 2) & ((1 << 2) - 1));
+
+            // update the value
+            if (taken) {
+                if (counterValue < 3) counterValue++;
+            }
+            else {
+                if (counterValue > 0) counterValue--;
+            }
+
+            //place new 2bC value in table
+            int bit_mask = (3 << 2);
+            globalPredictor[((pm_update*)u)->globalIndex][((pm_update*)u)->globalLRUTable]
+            = ((globalPredictor[((pm_update*)u)->globalIndex][((pm_update*)u)->globalLRUTable] & (~bit_mask)) | (counterValue << 2));
+            
+            // update GBH
+            history <<= 1;                           // shift table left 1
+            history |= taken;                        // add 1 or 0 to history (T/NT)
+            history &= (1 << HISTORY_LENGTH) - 1;    // mask for only 15 bits (chops off MSB)
         }
-
-        void update (branch_update *u, bool taken, unsigned int target) {
-
-		if (bi.br_flags & BR_CONDITIONAL) {
-
-			// update bimodal predictor if needed
-			unsigned char *c = &bimodalTable[((pm_update*)u)->index];
-			if (taken) {
-				if (*c < 3) (*c)++;
-			} else {
-				if (*c > 0) (*c)--;
-			}
-
-			// TODO: update global predictor table(s)
-
-			// update GBH
-			history <<= 1;				// shift table left 1
-			history |= taken;			// add 1 or 0 to history (T/NT)
-			history &= (1 << HISTORY_LENGTH) - 1;	// mask for only 15 bits (chops off MSB)
-		}		
-        }
+    }
 };
-//
+
+
 // Complete Pentium M branch predictors for extra credit
-// This class implements the complete Pentium M branch prediction units. 
-// It implements both branch target prediction and branch outcome predicton. 
+// This class implements the complete Pentium M branch prediction units.
+// It implements both branch target prediction and branch outcome predicton.
 class cpm_update : public branch_update {
 public:
         unsigned int index;
@@ -141,20 +199,18 @@ public:
 
 class cpm_predictor : public branch_predictor {
 public:
-        cpm_update u;
+    cpm_update u;
 
-        cpm_predictor (void) {
-        }
+    cpm_predictor (void) {
+    }
 
-        branch_update *predict (branch_info & b) {
-            u.direction_prediction (true);
-            u.target_prediction (0);
-            return &u;
-        }
+    branch_update *predict (branch_info & b) {
+        u.direction_prediction (true);
+        u.target_prediction (0);
+        return &u;
+    }
 
-        void update (branch_update *u, bool taken, unsigned int target) {
-        }
-
+    void update (branch_update *u, bool taken, unsigned int target) {
+        
+    }
 };
-
-
