@@ -1,6 +1,5 @@
 // trace.cc
 // This file contains code for reading traces.
-// djimenez
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,73 +9,35 @@
 #include "branch.h"
 #include "trace.h"
 
-// A trace is a piece of information about a branch.  The external 
-// representation of a trace is 9 bytes:
-// - A one byte "code."  The lower 4 bits are the x86 opcode for a
-// conditional branch (modulo 16).  The upper four bits are one of the
-// following:
-// 1 : taken conditional branch
-// 2 : not taken conditional branch
-// 3 : unconditional branch
-// 4 : indirect branch
-// 5 : call
-// 6 : indirect call
-// 7 : return
-// - A four byte little-endian branch address.  This is the address in memory 
-// of the first byte of the branch instruction.
-// - A four byte little-endian branch target.  This is the address in memory 
-// where the branch jumped.
-//
-// The input file is usually compressed either with gzip or bzip2 and this
-// file contains code to support reading from these formats by piping the
-// output of the decompressors.  However, this file s does another kind of
-// decompression on the traces after they have been decompressed by gzip
-// or bzip2.  If the upper four bits of the first byte read are either
-// 0 or 8 then the byte indicates that the trace has been compressed
-// from the 9 byte representation to a 1 or 2 byte representation.  This
-// compression is faciliated with prediction described below.  The compression
-// achieved is not impressive -- Huffman coding would do much better -- but
-// the purpose is to allow the stream of bytes fed to gzip or bzip2 to be
-// much more redundant and hence more compressible.
-
 // number of bytes to read at once from the decompressor
-
 #define BUFSIZE	10000
 
 // file pointer for the pipe from the decompressor
-
 FILE *tracefp;
 
 // buffer to read bytes into
-
 unsigned char buf[BUFSIZE];
 
 // current position in buffer
 unsigned int bufpos;
 
 // number of bytes read into buffer
-
 unsigned int bufsize;
 
 // true when end of file is reached
-
 bool end_of_file;
 
 // read a single byte from the trace file
-
 unsigned char read_byte (void) {
 
 	// if the buffer is empty...
-
 	if (bufpos == bufsize) {
 
 		// get a BUFSIZE-sized chunk of bytes from the input
-
 		bufpos = 0;
 		bufsize = fread (buf, 1, BUFSIZE, tracefp);
 
 		// nothing to read?  we must be done.
-
 		if (bufsize == 0) {
 			end_of_file = true;
 			return 0;
@@ -84,12 +45,10 @@ unsigned char read_byte (void) {
 	}
 
 	// one more byte 
-
 	return buf[bufpos++];
 }
 
 // read an unsigned integer in little endian format from the trace file
-
 unsigned int read_uint (void) {
 	unsigned int x0, x1, x2, x3;
 
@@ -135,8 +94,7 @@ struct remember {
 	}
 };
 
-// a return address stack
-                                                                                
+// a return address stack                                                                           
 #define RAS_SIZE        100
                                                                                 
 unsigned int ras[RAS_SIZE];
@@ -161,7 +119,6 @@ unsigned int pop_ras (void) {
 }
 
 // parameters for the predictor table
-
 #define N_REMEMBER	(1<<16)
 #define ASSOC		8
 
@@ -176,15 +133,12 @@ unsigned int pop_ras (void) {
 remember rtab[N_REMEMBER][ASSOC];
 
 // this int keeps time for the LRU algorithm
-
 static unsigned int now = 0; 
 
 // last trace seen
-
 static remember last_one; 
 
 // predict a trace
-
 remember *predict_remember (void) {
 	unsigned int index = last_one.target & (N_REMEMBER-1);
 	remember *r = &rtab[index][0];
@@ -192,7 +146,6 @@ remember *predict_remember (void) {
 }
 
 // update the predictor
-
 void update_remember (remember & me, remember *r, bool correct, int index) {
 	if (correct) {
 		r[index].lru_time = now++;
@@ -208,7 +161,6 @@ void update_remember (remember & me, remember *r, bool correct, int index) {
 }
 
 // read a single trace from the file
-
 trace *read_trace (void) {
 	static trace t;
 	bool ras_correct, ras_offby2, ras_offby3, correct;
@@ -222,16 +174,13 @@ trace *read_trace (void) {
 	remember r;
 
 	// predict the next trace
-
 	remember *p = predict_remember ();
 
 	// assume return address prediction is correct
-
 	ras_offby2 = false;
 	ras_offby3 = false;
 
 	// if the high bit of the first byte is set...
-
 	if (c & 0x80) {
 		// then it means the return address predictor will be
 		// slightly off but we can patch the prediction to make
@@ -241,12 +190,10 @@ trace *read_trace (void) {
 		if (c == 0x82)
 
 			// add 2 to the predicted target
-
 			ras_offby2 = true;
 		else if (c == 0x83)
 
 			// subtract 3 from the predicted target
-
 			ras_offby3 = true;
 		else assert (0);
 
